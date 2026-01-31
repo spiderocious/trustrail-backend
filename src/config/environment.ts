@@ -17,6 +17,7 @@ interface EnvironmentConfig {
   statementAnalysisJobInterval: number;
   paymentMonitorJobInterval: number;
   pwaMockMode: string;
+  tripleDESKey: string;
 }
 
 const getEnvVar = (key: string, defaultValue?: string): string => {
@@ -47,6 +48,7 @@ export const env: EnvironmentConfig = {
     10
   ),
   pwaMockMode: getEnvVar('PWA_MOCK_MODE', 'Inspect'),
+  tripleDESKey: getEnvVar('TRIPLE_DES_KEY'),
 };
 
 // Validate critical configurations

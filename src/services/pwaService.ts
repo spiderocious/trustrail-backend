@@ -127,14 +127,14 @@ export const createMerchant = async (businessData: {
   const isNumericString = (str: string): boolean => /^\d+$/.test(str);
 
   // Helper to validate URL
-  const isValidUrl = (str: string): boolean => {
-    try {
-      new URL(str);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  // const isValidUrl = (str: string): boolean => {
+  //   try {
+  //     new URL(str);
+  //     return true;
+  //   } catch {
+  //     return false;
+  //   }
+  // };
 
   // Format phones for different fields
   const localPhone = formatPhoneLocal(businessData.phoneNumber);
