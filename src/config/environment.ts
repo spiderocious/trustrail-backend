@@ -11,7 +11,7 @@ interface EnvironmentConfig {
   adminJwtSecret: string;
   pwaBaseUrl: string;
   pwaApiKey: string;
-  tripleDesKey: string;
+  pwaClientSecret: string;
   adminEmail: string;
   adminPassword: string;
   statementAnalysisJobInterval: number;
@@ -27,12 +27,6 @@ const getEnvVar = (key: string, defaultValue?: string): string => {
   return value;
 };
 
-const validateTripleDesKey = (key: string): void => {
-  if (Buffer.from(key).length !== 24) {
-    throw new Error('TRIPLE_DES_KEY must be exactly 24 bytes');
-  }
-};
-
 export const env: EnvironmentConfig = {
   port: parseInt(getEnvVar('PORT', '3000'), 10),
   nodeEnv: getEnvVar('NODE_ENV', 'development'),
@@ -41,7 +35,7 @@ export const env: EnvironmentConfig = {
   adminJwtSecret: getEnvVar('ADMIN_JWT_SECRET'),
   pwaBaseUrl: getEnvVar('PWA_BASE_URL'),
   pwaApiKey: getEnvVar('PWA_API_KEY'),
-  tripleDesKey: getEnvVar('TRIPLE_DES_KEY'),
+  pwaClientSecret: getEnvVar('PWA_CLIENT_SECRET'),
   adminEmail: getEnvVar('ADMIN_EMAIL'),
   adminPassword: getEnvVar('ADMIN_PASSWORD'),
   statementAnalysisJobInterval: parseInt(
@@ -56,7 +50,6 @@ export const env: EnvironmentConfig = {
 };
 
 // Validate critical configurations
-validateTripleDesKey(env.tripleDesKey);
 
 if (env.jwtSecret === env.adminJwtSecret) {
   throw new Error('JWT_SECRET and ADMIN_JWT_SECRET must be different');

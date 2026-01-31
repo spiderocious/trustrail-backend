@@ -6,17 +6,32 @@ const BCRYPT_SALT_ROUNDS = 10;
 
 /**
  * Encrypt data using TripleDES for PWA API
+ * As per OnePipe documentation:
+ * 1. Convert CLIENT SECRET (not TRIPLE_DES_KEY) to UTF-16LE
+ * 2. MD5 hash the buffered key
+ * 3. Extend 16-byte MD5 hash to 24 bytes by appending first 8 bytes
+ * 4. Use zero IV
+ *
+ * IMPORTANT: OnePipe uses the CLIENT SECRET for encryption, not a separate key
  */
 export const encryptForPWA = (plainText: string): string => {
   const algorithm = 'des-ede3-cbc';
-  const key = Buffer.from(env.tripleDesKey);
 
-  // Validate key length (must be exactly 24 bytes for TripleDES)
-  if (key.length !== 24) {
-    throw new Error('TripleDES key must be exactly 24 bytes');
-  }
-  const iv = crypto.randomBytes(8);
-  const cipher = crypto.createCipheriv(algorithm, key, iv);
+  // Step 1: Convert CLIENT SECRET to UTF-16LE buffer
+  // OnePipe docs: "Encrypt using Client application secret key"
+  const bufferedKey = Buffer.from(env.pwaClientSecret, 'utf16le');
+
+  // Step 2: MD5 hash the buffered key
+  const md5Hash = crypto.createHash('md5').update(bufferedKey).digest();
+
+  // Step 3: Extend 16-byte MD5 hash to 24 bytes by appending first 8 bytes
+  const key = Buffer.concat([md5Hash, md5Hash.slice(0, 8)]);
+
+  // Step 4: Use zero IV (8 bytes of zeros)
+  const iv = Buffer.alloc(8, 0);
+
+  // Encrypt the plaintext
+  const cipher = crypto.createCipheriv(algorithm, key, iv).setAutoPadding(true);
   let encrypted = cipher.update(plainText, 'utf8', 'base64');
   encrypted += cipher.final('base64');
 

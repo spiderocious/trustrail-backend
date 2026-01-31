@@ -1,56 +1,91 @@
 // PWA API Request Types
 
+export interface PWAAuth {
+  auth_provider: string;
+  secure: string | null;
+  type: string | null;
+  route_mode?: string | null;
+}
+
+export interface PWACustomer {
+  customer_ref: string;
+  firstname: string;
+  surname: string;
+  email: string;
+  mobile_no: string;
+}
+
 export interface PWABaseRequest {
   request_ref: string;
   request_type: string;
-  auth?: {
-    type: string;
-    secure?: string;
-    auth_provider: string;
-  };
+  auth?: PWAAuth;
   transaction: {
     mock_mode: 'Inspect' | 'Live';
     transaction_ref: string;
-    customer?: any;
+    transaction_desc?: string;
+    transaction_ref_parent?: string | null;
+    amount?: number;
+    customer?: PWACustomer;
     meta: any;
     details?: any;
+    options?: any;
   };
 }
 
 export interface PWACreateMerchantRequest extends PWABaseRequest {
   request_type: 'create merchant';
+  auth: PWAAuth;
   transaction: {
     mock_mode: 'Inspect' | 'Live';
     transaction_ref: string;
+    transaction_desc: string;
+    transaction_ref_parent?: string;
+    amount: number;
+    customer: PWACustomer;
+    meta: {
+      beta?: string;
+      biller_sector?: string;
+      simple_payment?: string;
+      webhook_url?: string;
+      whatsapp_contact_name?: string;
+      whatsapp_contact_no?: string;
+      business_short_name?: string;
+    };
     details: {
       business_name: string;
-      email: string;
-      phone_number: string;
       rc_number: string;
-      settlement_account_number: string;
+      settlement_account_no: string;
       settlement_bank_code: string;
-      settlement_account_name: string;
+      tin?: string;
+      address?: string;
+      notification_phone_number: string;
+      notification_email: string;
     };
-    meta: any;
+    options?: any;
   };
 }
 
 export interface PWACreateMandateRequest extends PWABaseRequest {
   request_type: 'create mandate';
-  auth: {
+  auth: PWAAuth & {
     type: 'bank.account';
     secure: string; // Encrypted account details
-    auth_provider: 'PaywithAccount';
   };
   transaction: {
     mock_mode: 'Inspect' | 'Live';
     transaction_ref: string;
+    transaction_desc: string;
+    transaction_ref_parent: null;
+    amount: number;
+    customer: PWACustomer;
     meta: {
+      amount: string; // Must be string in OnePipe API
+      skip_consent: string;
       bvn: string; // Encrypted BVN
       biller_code: string;
-      amount: number;
-      skip_consent: string;
+      customer_consent: string;
     };
+    details: Record<string, never>; // Empty object
   };
 }
 

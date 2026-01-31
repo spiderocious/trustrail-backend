@@ -3,10 +3,11 @@ import env from '../config/environment';
 
 /**
  * Generate MD5 signature for PWA API requests
- * Formula: MD5(API_KEY + ";" + request_ref)
+ * Formula: MD5(request_ref + ";" + client_secret)
+ * As per OnePipe API documentation
  */
 export const generatePWASignature = (requestRef: string): string => {
-  const data = `${env.pwaApiKey};${requestRef}`;
+  const data = `${requestRef};${env.pwaClientSecret}`;
   return crypto.createHash('md5').update(data).digest('hex');
 };
 

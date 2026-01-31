@@ -10,6 +10,7 @@ import publicRoutes from './publicRoutes';
 import adminRoutes from './adminRoutes';
 import healthRoutes from './healthRoutes';
 import onepipeMockRoutes from './onepipeMockRoutes';
+import pwaTestRoutes from './pwaTestRoutes';
 
 const router = Router();
 
@@ -41,5 +42,8 @@ router.use('/admin', adminRoutes);
 
 // OnePipe Mock (for testing/development)
 router.use('/onepipe-mock', onepipeMockRoutes);
+
+// PWA Test (direct access to PWA service methods for testing)
+router.use('/pwa-test', pwaTestRoutes);
 
 export default router;

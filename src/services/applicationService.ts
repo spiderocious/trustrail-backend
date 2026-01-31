@@ -257,6 +257,10 @@ export const manuallyApprove = async (
         accountNumber: application.customerDetails.accountNumber,
         bankCode: application.customerDetails.bankCode,
         bvn: application.customerDetails.bvn,
+        firstName: application.customerDetails.firstName,
+        lastName: application.customerDetails.lastName,
+        email: application.customerDetails.email,
+        phoneNumber: application.customerDetails.phoneNumber,
       },
       business.billerCode,
       application.totalAmount

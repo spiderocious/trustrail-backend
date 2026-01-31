@@ -1,20 +1,19 @@
 import axios from 'axios';
 import env from '../config/environment';
 import logger from '../config/logger';
-import { generatePWASignature } from '../utils/signatureGenerator';
-import { generatePWARequestRef } from '../utils/idGenerator';
-import { formatDateForPWA } from '../utils/dateUtils';
-import { encryptAccountCredentials, encryptBVN } from './encryptionService';
 import {
   PWABaseRequest,
   PWABaseResponse,
-  PWACreateMerchantRequest,
-  PWACreateMerchantResponse,
   PWACreateMandateRequest,
   PWACreateMandateResponse,
+  PWACreateMerchantRequest,
   PWASendInvoiceRequest,
-  PWASendInvoiceResponse,
+  PWASendInvoiceResponse
 } from '../types/pwa.types';
+import { formatDateForPWA } from '../utils/dateUtils';
+import { generatePWARequestRef } from '../utils/idGenerator';
+import { generatePWASignature } from '../utils/signatureGenerator';
+import { encryptAccountCredentials, encryptBVN } from './encryptionService';
 
 /**
  * Make request to PWA API
@@ -66,6 +65,41 @@ const makeRequest = async <T extends PWABaseResponse>(payload: PWABaseRequest): 
 };
 
 /**
+ * Format phone number to Nigerian international format (234xxxxxxxxx)
+ */
+const formatPhoneNumber = (phone: string): string => {
+  // Remove any spaces, dashes, or special characters
+  let cleaned = phone.replace(/[^0-9]/g, '');
+  // If it starts with 0, replace with 234
+  if (cleaned.startsWith('0')) {
+    cleaned = '234' + cleaned.substring(1);
+  }
+  // If it doesn't start with 234, add it
+  if (!cleaned.startsWith('234')) {
+    cleaned = '234' + cleaned;
+  }
+  return cleaned;
+};
+
+/**
+ * Format phone number to local format (0xxxxxxxxxx) - 11 chars max
+ */
+const formatPhoneLocal = (phone: string): string => {
+  // Remove any spaces, dashes, or special characters
+  let cleaned = phone.replace(/[^0-9]/g, '');
+  // Remove country code if present
+  if (cleaned.startsWith('234')) {
+    cleaned = '0' + cleaned.substring(3);
+  }
+  // Ensure it starts with 0
+  if (!cleaned.startsWith('0')) {
+    cleaned = '0' + cleaned;
+  }
+  // Ensure max 11 characters
+  return cleaned.substring(0, 11);
+};
+
+/**
  * Create merchant on PWA
  * Called during business registration
  */
@@ -76,34 +110,103 @@ export const createMerchant = async (businessData: {
   rcNumber: string;
   settlementAccountNumber: string;
   settlementBankCode: string;
-  settlementAccountName: string;
+  tin?: string;
+  address?: string;
+  businessShortName?: string;
+  webhookUrl?: string;
+  whatsappContactName?: string;
+  whatsappContactNo?: string;
+  customerFirstName?: string;
+  customerLastName?: string;
+  customerRef?: string;
 }): Promise<{ billerCode: string; merchantId: string }> => {
   const requestRef = generatePWARequestRef();
+  const formattedPhone = formatPhoneNumber(businessData.phoneNumber);
+
+  // Helper to validate numeric string
+  const isNumericString = (str: string): boolean => /^\d+$/.test(str);
+
+  // Helper to validate URL
+  const isValidUrl = (str: string): boolean => {
+    try {
+      new URL(str);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Format phones for different fields
+  const localPhone = formatPhoneLocal(businessData.phoneNumber);
+
+  // Validate and format whatsapp number
+  let whatsappPhone = localPhone;
+  if (businessData.whatsappContactNo) {
+    const formatted = formatPhoneLocal(businessData.whatsappContactNo);
+    // Only use if it's a valid 11-digit number
+    if (formatted.length === 11 && isNumericString(formatted)) {
+      whatsappPhone = formatted;
+    }
+  }
+
+  // customer_ref: max 13 chars, number string - validate if provided
+  let customerRef = formattedPhone.substring(formattedPhone.length - 13);
+  if (businessData.customerRef && isNumericString(businessData.customerRef)) {
+    customerRef = businessData.customerRef.substring(0, 13); // Ensure max 13 chars
+  }
+
+  // Validate webhook URL
+  const webhookUrl = process.env.WEBHOOK_URL;
 
   const payload: PWACreateMerchantRequest = {
     request_ref: requestRef,
     request_type: 'create merchant',
+    auth: {
+      auth_provider: 'PaywithAccount',
+      secure: null,
+      type: null,
+      route_mode: null,
+    },
     transaction: {
       mock_mode: env.pwaMockMode as 'Inspect' | 'Live',
       transaction_ref: requestRef,
+      transaction_desc: 'Applying for a new merchant account',
+      amount: 0,
+      customer: {
+        customer_ref: customerRef,
+        firstname: businessData.customerFirstName || 'Merchant',
+        surname: businessData.customerLastName || 'Owner',
+        email: businessData.email,
+        mobile_no: formattedPhone,
+      },
+      meta: {
+        beta: 'enabled',
+        biller_sector: 'Aggregattor',
+        simple_payment: 'enabled',
+        webhook_url: webhookUrl,
+        whatsapp_contact_name: businessData.whatsappContactName || undefined,
+        whatsapp_contact_no: whatsappPhone,
+        business_short_name: (businessData.businessShortName || businessData.businessName).substring(0, 15),
+      },
       details: {
         business_name: businessData.businessName,
-        email: businessData.email,
-        phone_number: businessData.phoneNumber,
         rc_number: businessData.rcNumber,
-        settlement_account_number: businessData.settlementAccountNumber,
+        settlement_account_no: businessData.settlementAccountNumber,
         settlement_bank_code: businessData.settlementBankCode,
-        settlement_account_name: businessData.settlementAccountName,
+        tin: businessData.tin || '',
+        address: businessData.address || '',
+        notification_phone_number: formattedPhone,
+        notification_email: businessData.email,
       },
-      meta: {},
+      options: null,
     },
   };
 
-  const response = await makeRequest<PWACreateMerchantResponse>(payload);
-
+  const response = await makeRequest<any>(payload);
+  console.log('PWA Create Merchant Response:', response?.data?.provider_response);
   return {
-    billerCode: response.data.biller_code,
-    merchantId: response.data.merchant_id,
+    billerCode: response?.data?.provider_response?.meta?.biller_code,
+    merchantId: response?.data?.merchant_id,
   };
 };
 
@@ -116,6 +219,10 @@ export const createMandate = async (
     accountNumber: string;
     bankCode: string;
     bvn: string; // Already encrypted in DB, needs to be re-encrypted for PWA
+    firstName: string;
+    lastName: string;
+    email: string;
+    phoneNumber: string;
   },
   billerCode: string,
   totalAmount: number
@@ -131,23 +238,40 @@ export const createMandate = async (
   // BVN should already be encrypted, but we can encrypt it again for PWA
   const encryptedBVN = encryptBVN(customerData.bvn);
 
+  // Format phone number
+  const formattedPhone = formatPhoneNumber(customerData.phoneNumber);
+  const customerRef = formattedPhone.substring(formattedPhone.length - 13);
+
   const payload: PWACreateMandateRequest = {
     request_ref: requestRef,
     request_type: 'create mandate',
     auth: {
+      auth_provider: 'PaywithAccount',
       type: 'bank.account',
       secure: encryptedCredentials,
-      auth_provider: 'PaywithAccount',
+      route_mode: null,
     },
     transaction: {
       mock_mode: env.pwaMockMode as 'Inspect' | 'Live',
       transaction_ref: requestRef,
+      transaction_desc: 'Creating a mandate',
+      transaction_ref_parent: null,
+      amount: 0,
+      customer: {
+        customer_ref: customerRef,
+        firstname: customerData.firstName,
+        surname: customerData.lastName,
+        email: customerData.email,
+        mobile_no: formattedPhone,
+      },
       meta: {
+        amount: totalAmount.toString(), // Must be string
+        skip_consent: 'true',
         bvn: encryptedBVN,
         biller_code: billerCode,
-        amount: totalAmount,
-        skip_consent: 'true',
+        customer_consent: '',
       },
+      details: {},
     },
   };
 

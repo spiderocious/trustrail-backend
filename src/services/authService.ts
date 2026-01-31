@@ -71,7 +71,10 @@ export const registerBusiness = async (data: RegisterBusinessData): Promise<Auth
       rcNumber: data.rcNumber,
       settlementAccountNumber: data.settlementAccountNumber,
       settlementBankCode: data.settlementBankCode,
-      settlementAccountName: data.settlementAccountName,
+      // Optional fields - can be added later if needed
+      // tin: data.tin,
+      // address: data.address,
+      // webhookUrl: data.webhookUrl,
     });
 
     business.billerCode = pwaResult.billerCode;
