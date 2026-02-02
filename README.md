@@ -1,6 +1,6 @@
 # TrustRail Backend
 
-A white-label Buy Now Pay Later (BNPL) platform for Nigerian businesses. TrustRail analyzes customer bank statements to assess creditworthiness and enables automated installment payment collection.
+TrustRail is a B2B trust orchestration platform that sits on top of PayWithAccount to manage payment eligibility, consent logic, retries, defaults, and auditability, while leaving actual direct debit execution to PWA.
 
 ## Features
 
