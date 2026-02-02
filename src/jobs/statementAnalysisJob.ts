@@ -1,12 +1,15 @@
-import Application from '../models/Application';
-import Business from '../models/Business';
-import TrustWallet from '../models/TrustWallet';
-import { analyzeApplication, saveTrustEngineOutput } from '../services/trustEngineService';
-import { analyzeFileWithOpenAI } from '../services/openaiService';
-import { createMandate } from '../services/pwaService';
-import { sendWebhook } from '../services/webhookService';
-import { logSystemAction } from '../services/auditService';
-import logger from '../config/logger';
+import logger from "../config/logger";
+import Application from "../models/Application";
+import Business from "../models/Business";
+import TrustWallet from "../models/TrustWallet";
+import { logSystemAction } from "../services/auditService";
+import { analyzeFileWithOpenAI } from "../services/openaiService";
+import { createMandate } from "../services/pwaService";
+import {
+  analyzeApplication,
+  saveTrustEngineOutput,
+} from "../services/trustEngineService";
+import { sendWebhook } from "../services/webhookService";
 
 /**
  * Statement Analysis Background Job
@@ -15,29 +18,45 @@ import logger from '../config/logger';
  */
 export const runStatementAnalysisJob = async (): Promise<void> => {
   try {
-    logger.info('Statement analysis job started');
+    logger.info("Statement analysis job started");
 
     // Query applications with status PENDING_ANALYSIS
     // Process maximum 10 at a time (FIFO - oldest first)
-    const pendingApplications = await Application.find({ status: 'PENDING_ANALYSIS' })
+    const pendingApplications = await Application.find({
+      status: "PENDING_ANALYSIS",
+    })
       .sort({ submittedAt: 1 }) // Oldest first
       .limit(10);
 
     if (pendingApplications.length === 0) {
-      logger.debug('No pending applications to analyze');
+      logger.debug("No pending applications to analyze");
       return;
     }
 
-    logger.info(`Processing ${pendingApplications.length} pending applications`);
+    logger.info(
+      `Processing ${pendingApplications.length} pending applications`,
+    );
 
     // Process each application
     for (const application of pendingApplications) {
       try {
         // Update status to ANALYZING
-        application.status = 'ANALYZING';
+        application.status = "ANALYZING";
         await application.save();
 
         logger.info(`Analyzing application ${application.applicationId}`);
+
+        await logSystemAction(
+          "application.process",
+          "Application",
+          application.applicationId,
+          undefined,
+          {
+            trustWalletId: application.trustWalletId,
+            businessId: application.businessId,
+            applicationId: application.applicationId,
+          },
+        );
 
         let trustEngineOutput: any;
 
@@ -45,17 +64,38 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
         if (application.openai?.fileId) {
           // Use OpenAI analysis
           try {
-            const trustWallet = await TrustWallet.findOne({ trustWalletId: application.trustWalletId });
+            const trustWallet = await TrustWallet.findOne({
+              trustWalletId: application.trustWalletId,
+            });
             if (!trustWallet) {
-              throw new Error(`TrustWallet not found: ${application.trustWalletId}`);
+              throw new Error(
+                `TrustWallet not found: ${application.trustWalletId}`,
+              );
             }
 
-            logger.info(`Using OpenAI analysis for application ${application.applicationId}`);
+            logger.info(
+              `Using OpenAI analysis for application ${application.applicationId}`,
+            );
 
-            const { analysisResult, fullResponse } = await analyzeFileWithOpenAI(
-              application.openai.fileId,
-              application.installmentAmount,
-              trustWallet.approvalWorkflow
+            const { analysisResult, fullResponse, fullPrompt } =
+              await analyzeFileWithOpenAI(
+                application.openai.fileId,
+                application.installmentAmount,
+                trustWallet.approvalWorkflow,
+              );
+
+            await logSystemAction(
+              "application.processed",
+              "Application",
+              application.applicationId,
+              undefined,
+              {
+                trustWalletId: application.trustWalletId,
+                businessId: application.businessId,
+                applicationId: application.applicationId,
+                openAIResponse: fullResponse,
+                openAIPrompt: fullPrompt,
+              },
             );
 
             // Save the entire OpenAI response for debugging
@@ -67,7 +107,7 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
               application.applicationId,
               application.trustWalletId,
               application.businessId,
-              analysisResult
+              analysisResult,
             );
 
             trustEngineOutput = {
@@ -75,22 +115,35 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
               outputId,
             };
 
-            logger.info(`OpenAI analysis completed for ${application.applicationId} (score: ${analysisResult.trustScore})`);
+            logger.info(
+              `OpenAI analysis completed for ${application.applicationId} (score: ${analysisResult.trustScore})`,
+            );
           } catch (error: any) {
-            logger.error(`OpenAI analysis failed for ${application.applicationId}:`, error);
+            logger.error(
+              `OpenAI analysis failed for ${application.applicationId}:`,
+              error,
+            );
 
             // Fallback to JS analysis if buffer exists
             if (application.bankStatementCsvData) {
-              logger.info(`Falling back to JS analysis for ${application.applicationId}`);
-              trustEngineOutput = await analyzeApplication(application.applicationId);
+              logger.info(
+                `Falling back to JS analysis for ${application.applicationId}`,
+              );
+              trustEngineOutput = await analyzeApplication(
+                application.applicationId,
+              );
             } else {
               throw error; // No fallback available
             }
           }
         } else {
           // Use legacy JS analysis
-          logger.info(`Using JS analysis for application ${application.applicationId}`);
-          trustEngineOutput = await analyzeApplication(application.applicationId);
+          logger.info(
+            `Using JS analysis for application ${application.applicationId}`,
+          );
+          trustEngineOutput = await analyzeApplication(
+            application.applicationId,
+          );
         }
 
         // Link TrustEngineOutput to Application
@@ -98,15 +151,17 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
         application.analyzedAt = new Date();
 
         // Get business for webhook and PWA integration
-        const business = await Business.findOne({ businessId: application.businessId });
+        const business = await Business.findOne({
+          businessId: application.businessId,
+        });
         if (!business) {
           throw new Error(`Business not found: ${application.businessId}`);
         }
 
         // Handle decision
-        if (trustEngineOutput.decision === 'APPROVED') {
+        if (trustEngineOutput.decision === "APPROVED") {
           // Update application status
-          application.status = 'APPROVED';
+          application.status = "APPROVED";
           application.approvedAt = new Date();
           await application.save();
 
@@ -122,17 +177,17 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
               phoneNumber: application.customerDetails.phoneNumber,
             },
             business.billerCode!,
-            application.totalAmount
+            application.totalAmount,
           );
 
           // Update application with mandate reference
           application.pwaMandateRef = mandateResult.mandateRef;
-          application.status = 'MANDATE_CREATED';
+          application.status = "MANDATE_CREATED";
           await application.save();
 
           // Send webhook to business
-          await sendWebhook(business.businessId, 'application.approved', {
-            event: 'application.approved',
+          await sendWebhook(business.businessId, "application.approved", {
+            event: "application.approved",
             applicationId: application.applicationId,
             trustWalletId: application.trustWalletId,
             customerName: `${application.customerDetails.firstName} ${application.customerDetails.lastName}`,
@@ -142,16 +197,18 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
             pwaMandateRef: mandateResult.mandateRef,
           });
 
-          logger.info(`Application ${application.applicationId} APPROVED and mandate created`);
-        } else if (trustEngineOutput.decision === 'DECLINED') {
+          logger.info(
+            `Application ${application.applicationId} APPROVED and mandate created`,
+          );
+        } else if (trustEngineOutput.decision === "DECLINED") {
           // Update application status
-          application.status = 'DECLINED';
+          application.status = "DECLINED";
           application.declinedAt = new Date();
           await application.save();
 
           // Send webhook to business
-          await sendWebhook(business.businessId, 'application.declined', {
-            event: 'application.declined',
+          await sendWebhook(business.businessId, "application.declined", {
+            event: "application.declined",
             applicationId: application.applicationId,
             trustWalletId: application.trustWalletId,
             customerName: `${application.customerDetails.firstName} ${application.customerDetails.lastName}`,
@@ -161,49 +218,54 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
           });
 
           logger.info(`Application ${application.applicationId} DECLINED`);
-        } else if (trustEngineOutput.decision === 'FLAGGED_FOR_REVIEW') {
+        } else if (trustEngineOutput.decision === "FLAGGED_FOR_REVIEW") {
           // Update application status
-          application.status = 'FLAGGED_FOR_REVIEW';
+          application.status = "FLAGGED_FOR_REVIEW";
           await application.save();
 
           // Send webhook to business
-          await sendWebhook(business.businessId, 'application.flagged', {
-            event: 'application.flagged',
+          await sendWebhook(business.businessId, "application.flagged", {
+            event: "application.flagged",
             applicationId: application.applicationId,
             trustWalletId: application.trustWalletId,
             customerName: `${application.customerDetails.firstName} ${application.customerDetails.lastName}`,
             trustScore: trustEngineOutput.trustScore,
             decision: trustEngineOutput.decision,
             riskFlags: trustEngineOutput.riskFlags,
-            message: 'Application requires manual review',
+            message: "Application requires manual review",
           });
 
-          logger.info(`Application ${application.applicationId} FLAGGED FOR REVIEW`);
+          logger.info(
+            `Application ${application.applicationId} FLAGGED FOR REVIEW`,
+          );
         }
 
         // Log audit
         await logSystemAction(
           `application.${trustEngineOutput.decision.toLowerCase()}`,
-          'Application',
+          "Application",
           application.applicationId,
           undefined,
           {
             trustScore: trustEngineOutput.trustScore,
             decision: trustEngineOutput.decision,
-          }
+          },
         );
       } catch (error: any) {
         // Log error but continue processing other applications
-        logger.error(`Error processing application ${application.applicationId}:`, error);
+        logger.error(
+          `Error processing application ${application.applicationId}:`,
+          error,
+        );
 
         // Leave status as ANALYZING so it can be retried or manually reviewed
         // Don't crash the entire job
       }
     }
 
-    logger.info('Statement analysis job completed');
+    logger.info("Statement analysis job completed");
   } catch (error: any) {
-    logger.error('Statement analysis job error:', error);
+    logger.error("Statement analysis job error:", error);
     // Don't throw - let job continue running
   }
 };

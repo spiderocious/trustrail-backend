@@ -43,6 +43,7 @@ export const analyzeFileWithOpenAI = async (
 ): Promise<{
   analysisResult: TrustEngineAnalysisResult;
   fullResponse: any; // Save entire response for debugging
+  fullPrompt?: string;
 }> => {
   try {
     const systemPrompt = process.env.OPENAI_PROMPT;
@@ -114,6 +115,7 @@ Min Trust Score: ${approvalWorkflow.minTrustScore}`;
     return {
       analysisResult,
       fullResponse,
+      fullPrompt,
     };
   } catch (error: any) {
     logger.error('OpenAI analysis error:', error);
