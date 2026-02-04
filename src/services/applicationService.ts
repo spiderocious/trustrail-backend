@@ -6,7 +6,7 @@ import PaymentTransaction from '../models/PaymentTransaction';
 import { generateApplicationId } from '../utils/idGenerator';
 import { encryptBVN } from './encryptionService';
 import { logBusinessAction, logSystemAction } from './auditService';
-import { createMandate } from './pwaService';
+import { createMandate, sendInstallmentInvoice } from './pwaService';
 import logger from '../config/logger';
 
 export interface CreateApplicationData {
@@ -268,6 +268,49 @@ export const manuallyApprove = async (
 
     application.pwaMandateRef = mandateResult.mandateRef;
     application.status = 'MANDATE_CREATED';
+    await application.save();
+
+    // Immediately send installment invoice to create virtual account
+    try {
+      const invoiceResult = await sendInstallmentInvoice(
+        {
+          accountNumber: application.customerDetails.accountNumber,
+          bankCode: application.customerDetails.bankCode,
+          firstName: application.customerDetails.firstName,
+          lastName: application.customerDetails.lastName,
+          email: application.customerDetails.email,
+          phoneNumber: application.customerDetails.phoneNumber,
+        },
+        business.billerCode,
+        application.totalAmount,
+        application.downPaymentRequired,
+        application.installmentCount,
+        application.frequency,
+        new Date() // Start date for installments
+      );
+
+      // Update application with virtual account
+      application.virtualAccountNumber = invoiceResult.virtualAccountNumber;
+      application.status = 'MANDATE_ACTIVE';
+      application.mandateActivatedAt = new Date();
+
+      // Log audit
+      await logSystemAction(
+        'invoice.sent',
+        'Application',
+        application.applicationId,
+        undefined,
+        {
+          virtualAccountNumber: invoiceResult.virtualAccountNumber,
+          downPaymentRequired: application.downPaymentRequired,
+        }
+      );
+
+      logger.info(`Virtual account created for ${application.applicationId}: ${invoiceResult.virtualAccountNumber}`);
+    } catch (error: any) {
+      logger.error(`Failed to create virtual account for ${application.applicationId}:`, error);
+      // Leave status as MANDATE_CREATED - webhook handler will retry if NIBSS webhook arrives
+    }
   } catch (error: any) {
     logger.error(`Failed to create PWA mandate for application ${applicationId}:`, error);
     throw new Error(`Failed to create mandate: ${error.message}`);
