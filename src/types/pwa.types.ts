@@ -84,8 +84,14 @@ export interface PWACreateMandateRequest extends PWABaseRequest {
       bvn: string; // Encrypted BVN
       biller_code: string;
       customer_consent: string;
+<<<<<<< HEAD
+      start_date?: string; // Format: YYYY-MM-DD-HH-mm-ss
+      repeat_end_date?: string; // Format: YYYY-MM-DD-HH-mm-ss
+      repeat_frequency?: 'once' | 'daily' | 'weekly' | 'monthly';
+=======
       repeat_end_date?: string; // Format: YYYY-MM-DD
       repeat_frequency?: string; // 'weekly', 'monthly', or 'once'
+>>>>>>> main
     };
     details: Record<string, never>; // Empty object
   };
@@ -93,17 +99,27 @@ export interface PWACreateMandateRequest extends PWABaseRequest {
 
 export interface PWASendInvoiceRequest extends PWABaseRequest {
   request_type: 'send invoice';
+  auth: {
+    type: 'bank.account';
+    secure: string; // Encrypted account credentials
+    auth_provider: 'PaywithAccount';
+  };
   transaction: {
     mock_mode: 'Inspect' | 'Live';
     transaction_ref: string;
+    transaction_desc: string;
+    transaction_ref_parent: null;
+    amount: number;
+    customer: PWACustomer;
     meta: {
       type: 'instalment';
       down_payment: number;
-      repeat_frequency: 'weekly' | 'monthly';
+      repeat_frequency: 'weekly' | 'monthly' | 'daily';
       repeat_start_date: string; // Format: YYYY-MM-DD-HH-mm-ss
       number_of_payments: number;
       biller_code: string;
     };
+    details: {};
   };
 }
 

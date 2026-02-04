@@ -1,3 +1,14 @@
+<<<<<<< HEAD
+import Application from '../models/Application';
+import Business from '../models/Business';
+import TrustWallet from '../models/TrustWallet';
+import { analyzeApplication, saveTrustEngineOutput } from '../services/trustEngineService';
+import { analyzeFileWithOpenAI } from '../services/openaiService';
+import { createMandate, sendInstallmentInvoice } from '../services/pwaService';
+import { sendWebhook } from '../services/webhookService';
+import { logSystemAction } from '../services/auditService';
+import logger from '../config/logger';
+=======
 import logger from "../config/logger";
 import Application from "../models/Application";
 import Business from "../models/Business";
@@ -11,6 +22,7 @@ import {
   createInvalidStatementOutput,
 } from "../services/trustEngineService";
 import { sendWebhook } from "../services/webhookService";
+>>>>>>> main
 
 /**
  * Statement Analysis Background Job
@@ -200,6 +212,49 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
           application.status = "MANDATE_CREATED";
           await application.save();
 
+          // Immediately send installment invoice to create virtual account
+          try {
+            const invoiceResult = await sendInstallmentInvoice(
+              {
+                accountNumber: application.customerDetails.accountNumber,
+                bankCode: application.customerDetails.bankCode,
+                firstName: application.customerDetails.firstName,
+                lastName: application.customerDetails.lastName,
+                email: application.customerDetails.email,
+                phoneNumber: application.customerDetails.phoneNumber,
+              },
+              business.billerCode!,
+              application.totalAmount,
+              application.downPaymentRequired,
+              application.installmentCount,
+              application.frequency,
+              new Date() // Start date for installments
+            );
+
+            // Update application with virtual account
+            application.virtualAccountNumber = invoiceResult.virtualAccountNumber;
+            application.status = 'MANDATE_ACTIVE';
+            application.mandateActivatedAt = new Date();
+            await application.save();
+
+            // Log audit
+            await logSystemAction(
+              'invoice.sent',
+              'Application',
+              application.applicationId,
+              undefined,
+              {
+                virtualAccountNumber: invoiceResult.virtualAccountNumber,
+                downPaymentRequired: application.downPaymentRequired,
+              }
+            );
+
+            logger.info(`Virtual account created for ${application.applicationId}: ${invoiceResult.virtualAccountNumber}`);
+          } catch (error: any) {
+            logger.error(`Failed to create virtual account for ${application.applicationId}:`, error);
+            // Leave status as MANDATE_CREATED - webhook handler will retry if NIBSS webhook arrives
+          }
+
           // Send webhook to business
           await sendWebhook(business.businessId, "application.approved", {
             event: "application.approved",
@@ -210,6 +265,11 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
             decision: trustEngineOutput.decision,
             totalAmount: application.totalAmount,
             pwaMandateRef: mandateResult.mandateRef,
+            virtualAccountNumber: application.virtualAccountNumber,
+            downPaymentRequired: application.downPaymentRequired,
+            nextSteps: application.virtualAccountNumber
+              ? 'Customer should pay down payment to the virtual account to activate installment plan'
+              : 'Waiting for mandate activation',
           });
 
           logger.info(

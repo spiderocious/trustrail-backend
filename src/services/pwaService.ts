@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { addMonths } from 'date-fns';
 import env from '../config/environment';
 import logger from '../config/logger';
 import {
@@ -242,6 +243,11 @@ export const createMandate = async (
   const formattedPhone = formatPhoneNumber(customerData.phoneNumber);
   const customerRef = formattedPhone.substring(formattedPhone.length - 13);
 
+  // Calculate start date (current date) and end date (6 months later)
+  const startDate = new Date();
+  const endDate = addMonths(startDate, 6);
+  const formattedEndDate = formatDateForPWA(endDate);
+
   const payload: PWACreateMandateRequest = {
     request_ref: requestRef,
     request_type: 'create mandate',
@@ -288,10 +294,19 @@ export const createMandate = async (
 
 /**
  * Send installment invoice
- * Called after mandate activation to create virtual account and schedule debits
+ * Called after mandate creation to create virtual account and schedule debits
  */
 export const sendInstallmentInvoice = async (
+  customerData: {
+    accountNumber: string;
+    bankCode: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phoneNumber: string;
+  },
   billerCode: string,
+  totalAmount: number,
   downPayment: number,
   installmentCount: number,
   frequency: 'weekly' | 'monthly',
@@ -299,15 +314,40 @@ export const sendInstallmentInvoice = async (
 ): Promise<{ virtualAccountNumber: string }> => {
   const requestRef = generatePWARequestRef();
 
+  // Encrypt credentials for PWA
+  const encryptedCredentials = encryptAccountCredentials(
+    customerData.accountNumber,
+    customerData.bankCode
+  );
+
+  // Format phone number
+  const formattedPhone = formatPhoneNumber(customerData.phoneNumber);
+  const customerRef = formattedPhone.substring(formattedPhone.length - 13);
+
   // Format start date for PWA
   const formattedStartDate = formatDateForPWA(startDate);
 
   const payload: PWASendInvoiceRequest = {
     request_ref: requestRef,
     request_type: 'send invoice',
+    auth: {
+      type: 'bank.account',
+      secure: encryptedCredentials,
+      auth_provider: 'PaywithAccount',
+    },
     transaction: {
       mock_mode: env.pwaMockMode as 'Inspect' | 'Live',
       transaction_ref: requestRef,
+      transaction_desc: 'Collect installment payment',
+      transaction_ref_parent: null,
+      amount: totalAmount,
+      customer: {
+        customer_ref: customerRef,
+        firstname: customerData.firstName,
+        surname: customerData.lastName,
+        email: customerData.email,
+        mobile_no: formattedPhone,
+      },
       meta: {
         type: 'instalment',
         down_payment: downPayment,
@@ -316,6 +356,7 @@ export const sendInstallmentInvoice = async (
         number_of_payments: installmentCount,
         biller_code: billerCode,
       },
+      details: {},
     },
   };
 

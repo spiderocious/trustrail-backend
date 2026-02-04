@@ -298,6 +298,20 @@ const handleMandateActivation = async (payload: any): Promise<void> => {
       throw new Error(`Application not found for mandate reference: ${mandateRef}`);
     }
 
+    // Check if virtual account already exists (idempotency check)
+    if (application.virtualAccountNumber && application.status === 'MANDATE_ACTIVE') {
+      logger.info(`Virtual account already exists for ${application.applicationId} - skipping duplicate webhook processing`);
+
+      // Just update PWA mandate ID if not set
+      if (!application.pwaMandateId && pwaMandateId) {
+        application.pwaMandateId = pwaMandateId;
+        await application.save();
+        logger.info(`Updated PWA mandate ID for ${application.applicationId}: ${pwaMandateId}`);
+      }
+
+      return; // Skip duplicate processing
+    }
+
     // Update application status
     application.status = 'MANDATE_ACTIVE';
     application.pwaMandateId = pwaMandateId;
@@ -322,35 +336,50 @@ const handleMandateActivation = async (payload: any): Promise<void> => {
       throw new Error(`Business not found: ${application.businessId}`);
     }
 
-    // Call PWA send invoice (installment type) to create virtual account for down payment
-    const invoiceResult = await sendInstallmentInvoice(
-      business.billerCode!,
-      application.downPaymentRequired,
-      application.installmentCount,
-      application.frequency,
-      new Date()
-    );
+    // Only call sendInstallmentInvoice if virtual account doesn't exist yet
+    if (!application.virtualAccountNumber) {
+      logger.info(`Creating virtual account for ${application.applicationId} via webhook`);
 
-    // Update application with virtual account number
-    application.virtualAccountNumber = invoiceResult.virtualAccountNumber;
-    await application.save();
+      const invoiceResult = await sendInstallmentInvoice(
+        {
+          accountNumber: application.customerDetails.accountNumber,
+          bankCode: application.customerDetails.bankCode,
+          firstName: application.customerDetails.firstName,
+          lastName: application.customerDetails.lastName,
+          email: application.customerDetails.email,
+          phoneNumber: application.customerDetails.phoneNumber,
+        },
+        business.billerCode!,
+        application.totalAmount,
+        application.downPaymentRequired,
+        application.installmentCount,
+        application.frequency,
+        new Date()
+      );
 
-    // Send webhook to business
-    const webhookPayload = {
-      event: 'mandate.activated',
-      applicationId: application.applicationId,
-      mandateRef,
-      pwaMandateId,
-      virtualAccount: invoiceResult.virtualAccountNumber,
-      downPaymentRequired: application.downPaymentRequired,
-      customerName: `${application.customerDetails.firstName} ${application.customerDetails.lastName}`,
-      trustWalletId: application.trustWalletId,
-      nextSteps: 'Customer should pay down payment to the virtual account to activate installment plan',
-    };
+      // Update application with virtual account number
+      application.virtualAccountNumber = invoiceResult.virtualAccountNumber;
+      await application.save();
 
-    await sendWebhook(business.businessId, 'mandate.activated', webhookPayload);
+      // Send webhook to business
+      const webhookPayload = {
+        event: 'mandate.activated',
+        applicationId: application.applicationId,
+        mandateRef,
+        pwaMandateId,
+        virtualAccount: invoiceResult.virtualAccountNumber,
+        downPaymentRequired: application.downPaymentRequired,
+        customerName: `${application.customerDetails.firstName} ${application.customerDetails.lastName}`,
+        trustWalletId: application.trustWalletId,
+        nextSteps: 'Customer should pay down payment to the virtual account to activate installment plan',
+      };
 
-    logger.info(`Mandate activated for application ${application.applicationId}. Virtual account: ${invoiceResult.virtualAccountNumber}`);
+      await sendWebhook(business.businessId, 'mandate.activated', webhookPayload);
+
+      logger.info(`Mandate activated for application ${application.applicationId}. Virtual account: ${invoiceResult.virtualAccountNumber}`);
+    } else {
+      logger.info(`Virtual account already exists for ${application.applicationId}: ${application.virtualAccountNumber}`);
+    }
   } catch (error: any) {
     logger.error('Error in handleMandateActivation:', error);
     throw error;
