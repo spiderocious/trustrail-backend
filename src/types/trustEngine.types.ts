@@ -72,6 +72,10 @@ export interface TrustScoreBreakdown {
 }
 
 export interface TrustEngineAnalysisResult {
+  // Statement Validity
+  isValidStatement?: boolean; // false if document is not a valid bank statement
+  invalidStatementReason?: string; // Reason why statement is invalid
+
   // Decision
   decision: 'APPROVED' | 'FLAGGED_FOR_REVIEW' | 'DECLINED';
   trustScore: number; // 0-100

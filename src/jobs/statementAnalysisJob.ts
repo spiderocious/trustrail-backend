@@ -8,6 +8,7 @@ import { createMandate } from "../services/pwaService";
 import {
   analyzeApplication,
   saveTrustEngineOutput,
+  createInvalidStatementOutput,
 } from "../services/trustEngineService";
 import { sendWebhook } from "../services/webhookService";
 
@@ -77,12 +78,26 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
               `Using OpenAI analysis for application ${application.applicationId}`,
             );
 
-            const { analysisResult, fullResponse, fullPrompt } =
+            let { analysisResult, fullResponse, fullPrompt } =
               await analyzeFileWithOpenAI(
                 application.openai.fileId,
                 application.installmentAmount,
                 trustWallet.approvalWorkflow,
               );
+
+            // Check if OpenAI determined this is not a valid bank statement
+            if (analysisResult.isValidStatement === false) {
+              logger.warn(
+                `Invalid statement detected for application ${application.applicationId}: ${analysisResult.invalidStatementReason}`,
+              );
+
+              // Replace with zeroed output
+              analysisResult = createInvalidStatementOutput(
+                analysisResult.invalidStatementReason ||
+                  "Document is not a valid bank statement",
+                application.installmentAmount,
+              );
+            }
 
             await logSystemAction(
               "application.processed",
@@ -215,6 +230,8 @@ export const runStatementAnalysisJob = async (): Promise<void> => {
             trustScore: trustEngineOutput.trustScore,
             decision: trustEngineOutput.decision,
             riskFlags: trustEngineOutput.riskFlags,
+            isValidStatement: trustEngineOutput.isValidStatement !== false,
+            invalidStatementReason: trustEngineOutput.invalidStatementReason,
           });
 
           logger.info(`Application ${application.applicationId} DECLINED`);

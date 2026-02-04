@@ -437,6 +437,80 @@ const makeDecision = (
 };
 
 /**
+ * Create a zeroed TrustEngineAnalysisResult for invalid statements
+ * Used when OpenAI determines the uploaded file is not a valid bank statement
+ */
+export const createInvalidStatementOutput = (
+  reason: string,
+  installmentAmount: number
+): TrustEngineAnalysisResult => {
+  const now = new Date();
+
+  return {
+    isValidStatement: false,
+    invalidStatementReason: reason,
+    decision: 'DECLINED',
+    trustScore: 0,
+    periodCovered: {
+      startDate: now,
+      endDate: now,
+      monthsAnalyzed: 0,
+    },
+    incomeAnalysis: {
+      totalIncome: 0,
+      avgMonthlyIncome: 0,
+      incomeConsistency: 0,
+      incomeSources: [],
+    },
+    spendingAnalysis: {
+      totalSpending: 0,
+      avgMonthlySpending: 0,
+      spendingCategories: {
+        bills: 0,
+        loans: 0,
+        gambling: 0,
+        transfers: 0,
+        other: 0,
+      },
+    },
+    balanceAnalysis: {
+      avgBalance: 0,
+      minBalance: 0,
+      maxBalance: 0,
+      closingBalance: 0,
+    },
+    behaviorAnalysis: {
+      transactionCount: 0,
+      avgDailyTransactions: 0,
+      bounceCount: 0,
+      overdraftUsage: false,
+    },
+    debtProfile: {
+      existingLoanRepayments: 0,
+      debtToIncomeRatio: 0,
+    },
+    affordabilityAssessment: {
+      canAffordInstallment: false,
+      monthlyInstallmentAmount: installmentAmount,
+      disposableIncome: 0,
+      affordabilityRatio: 0,
+      cushion: 0,
+    },
+    riskFlags: [
+      {
+        flag: 'INVALID_STATEMENT',
+        severity: 'HIGH',
+        description: reason,
+      },
+    ],
+    ruleCompliance: {
+      passedMinTrustScore: false,
+      overallPass: false,
+    },
+  };
+};
+
+/**
  * Save analysis result to database
  */
 export const saveTrustEngineOutput = async (
@@ -452,6 +526,8 @@ export const saveTrustEngineOutput = async (
     applicationId,
     trustWalletId,
     businessId,
+    isValidStatement: analysisResult.isValidStatement !== false,
+    invalidStatementReason: analysisResult.invalidStatementReason,
     decision: analysisResult.decision,
     trustScore: analysisResult.trustScore,
     statementAnalysis: {
@@ -524,4 +600,5 @@ export default {
   analyzeStatement,
   saveTrustEngineOutput,
   analyzeApplication,
+  createInvalidStatementOutput,
 };

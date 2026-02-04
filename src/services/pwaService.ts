@@ -269,11 +269,15 @@ export const createMandate = async (
         skip_consent: 'true',
         bvn: encryptedBVN,
         biller_code: billerCode,
-        customer_consent: '',
+        customer_consent: "https://paywithaccount.com/consent_template.pdf",
+        repeat_end_date: "2030-04-01",
+        repeat_frequency: "once"
       },
       details: {},
     },
   };
+
+  console.log(payload);
 
   const response = await makeRequest<PWACreateMandateResponse>(payload);
 

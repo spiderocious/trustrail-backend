@@ -25,6 +25,8 @@ export interface ITrustEngineOutput extends Document {
   applicationId: string;
   trustWalletId: string;
   businessId: string;
+  isValidStatement: boolean;
+  invalidStatementReason?: string;
   decision: 'APPROVED' | 'FLAGGED_FOR_REVIEW' | 'DECLINED';
   trustScore: number;
   statementAnalysis: {
@@ -129,6 +131,15 @@ const TrustEngineOutputSchema: Schema = new Schema(
       type: String,
       required: true,
       index: true,
+    },
+    isValidStatement: {
+      type: Boolean,
+      required: true,
+      default: true,
+    },
+    invalidStatementReason: {
+      type: String,
+      required: false,
     },
     decision: {
       type: String,

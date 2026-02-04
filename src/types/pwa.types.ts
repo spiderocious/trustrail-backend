@@ -84,6 +84,8 @@ export interface PWACreateMandateRequest extends PWABaseRequest {
       bvn: string; // Encrypted BVN
       biller_code: string;
       customer_consent: string;
+      repeat_end_date?: string; // Format: YYYY-MM-DD
+      repeat_frequency?: string; // 'weekly', 'monthly', or 'once'
     };
     details: Record<string, never>; // Empty object
   };
